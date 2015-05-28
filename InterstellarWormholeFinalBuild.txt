@@ -1,0 +1,168 @@
+(* Initial camera position (\[Theta]c, lc, \[Phi]c) *)
+lc = 1.;
+\[Theta]c = (1. \[Pi])/2;
+\[Phi]c = 0.;
+Inf = 10^10;
+
+(*Properties of Wormhole*)
+\[Rho]wh = 1.3;
+Wwh = 0.05;
+awh = 0.5;
+
+(*Setup equations*)
+
+(*Expression for r[l], with parameters that will be set in function \
+that calls these expressions. Note that
+this r[l] only applies outside the wormhole. Inside the wormhole, \
+r[l]=\[Rho] *)
+x[l_, M_, a_] := (2 (Abs[l] - a))/(\[Pi]*M);
+r[l_, \[Rho]_, M_, a_] := 
+  Piecewise[{{\[Rho] + 
+      M (x[l, M, a]*ArcTan[x[l, M, a]] - 1/2 Log[1 + (x[l, M, a])^2]),
+      Abs[l] > a}, {\[Rho], Abs[l] <= a}}];
+drdl[l_, \[Rho]_, M_, a_] := 
+  Piecewise[{{(2 ArcTan[(2 (-a + Abs[l]))/(M \[Pi])] Sign[l])/\[Pi], 
+     Abs[l] > a}, {0, Abs[l] <= a}}];
+
+(*RayTrace function solves the DE for a given point in the camera sky*)
+
+
+RayTrace[\[Rho]_, Wparam_, aparam_, \[Theta]cs_, \[Phi]cs_] := 
+  Block[ {W, a, M, Nx, Ny, Nz, nl, n\[Phi], n\[Theta], plInit, 
+    p\[Theta]Init, p\[Phi]Init, b, Bsq, 
+    soln, \[Theta]prime, \[Phi]prime, s, \[Theta]adjust, \[Phi]adjust,
+     l, \[Theta], \[Phi], pl, p\[Theta]},
+   
+   (* Get the W and a *)
+   W = Wparam*\[Rho];
+   a = aparam*\[Rho];
+   
+   (*Convert from Lensing Width to Mass*)
+   M = W/1.42953;
+   
+   (* Get the components of the unit vector pointing in the direction \
+of the light ray coming from (\[Theta]cs,\[Phi]cs) *)
+   Nx = Sin[\[Theta]cs] Cos[\[Phi]cs];
+   Ny = Sin[\[Theta]cs] Sin[\[Phi]cs];
+   Nz = Cos[\[Theta]cs];
+   
+   (*Direction of propagation of incoming ray *)
+   nl = -Nx;
+   n\[Phi] = -Ny;
+   n\[Theta] = Nz;
+   
+   (*Incoming Light Ray's Momenta *)
+   plInit = nl;
+   p\[Theta]Init = r[lc, \[Rho], M, a]*n\[Theta];
+   p\[Phi]Init = r[lc, \[Rho], M, a] * Sin[\[Theta]c]*n\[Phi];
+   
+   (*Constants of the ray's motion*)
+   b = r[lc, \[Rho], M, a] * Sin[\[Theta]c]*n\[Phi]; (* = p\[Phi]*)
+   Bsq = (r[lc, \[Rho], M, a])^2*(n\[Theta]^2 + n\[Phi]^2); (* = 
+   p\[Theta]^2+ p\[Phi]^2/(Sin^2)[\[Theta]]*)
+   
+   (*Now we're ready to solve our DEs*)
+   soln = NDSolve[{
+      l'[t] == pl[t],
+      \[Theta]'[t] == p\[Theta][t]/(r[l[t], \[Rho], M, a])^2,
+      \[Phi]'[t] == b/((r[l[t], \[Rho], M, a])^2*(Sin[\[Theta][t]])^2),
+      pl'[t] == Bsq*drdl[l[t], \[Rho], M, a]/(r[l[t], \[Rho], M, a])^3,
+      p\[Theta]'[t] == 
+       b^2/(r[l[t], \[Rho], M, a])^2*
+        Cos[\[Theta][t]]/(Sin[\[Theta][t]])^3,
+      l[0] == lc,
+      \[Theta][0] == \[Theta]c,
+      \[Phi][0] == \[Phi]c,
+      pl[0] == plInit,
+      p\[Theta][0] == p\[Theta]Init},
+     {l, \[Theta], \[Phi], pl, p\[Theta]},
+     {t, 0, -Inf}
+     ];
+   
+   \[Theta]prime = Flatten[Evaluate[{\[Theta][-Inf] /. soln}]][[1]];
+   \[Phi]prime = Flatten[Evaluate[{\[Phi][-Inf] /. soln}]][[1]];
+   s = If[Flatten[Sign[Evaluate[{l[-Inf] /. soln}]]][[1]] > 0, 1, 0];
+   
+   (* Currently, 
+   our \[Theta]' and \[Phi]' values run all over the place. 
+   They are supposed to be angles, 
+   so we bring them to the range we want*)
+   \[Theta]adjust = Mod[\[Theta]prime, \[Pi]];
+   \[Phi]adjust = Mod[\[Phi]prime, 2 \[Pi]];
+   Return[{{\[Theta]cs, \[Phi]cs}, {\[Theta]adjust, \[Phi]adjust, s}}];
+   
+   Plot[Evaluate[{\[Theta][t] /. soln}], {t, -Inf, 0}, 
+    PlotStyle -> Automatic]
+   
+   ];
+
+(*CreateMap functions creates a map of solution to DEs of various \
+points in the camera sky*)
+CreateMap[numberOfRows_, numberOfCols_] := Block[{MapList},
+   (*PARALLELISE RAYTRACE COMPUTATION*)
+   MapList = 
+    ParallelTable[
+     RayTrace[\[Rho]wh, Wwh, 
+      awh, \[Theta]index, \[Phi]index], {\[Theta]index, 0., 
+      1. \[Pi], (1. \[Pi])/512}, {\[Phi]index, 0., 2. \[Pi], (
+      2. \[Pi])/512}];
+   Do[
+    (*Scale inputs: (\[Theta], \[Phi])*)
+    MapList[[i, j, 1, 1]] = 
+     MapList[[i, j, 1, 1]]*(numberOfRows - 1)/(1. \[Pi]) + 1.;
+    MapList[[i, j, 1, 2]] = 
+     MapList[[i, j, 1, 2]]*(numberOfCols - 1)/(2. \[Pi]) + 1.;
+    (*Scale Outputs: (\[Theta], \[Phi])*)
+    MapList[[i, j, 2, 1]] = 
+     MapList[[i, j, 2, 1]]*(numberOfRows - 1)/(1. \[Pi]) + 1.;
+    MapList[[i, j, 2, 2]] = 
+     MapList[[i, j, 2, 2]]*(numberOfCols - 1)/(2. \[Pi]) + 1.;
+    , {j, 1, Length[MapList[[1]]]}, {i, 1, Length[MapList]}];
+   Return[MapList];
+   ];
+
+(*CreateImage function interpolates from the table created by \
+CreateMap, and calculates each pixel accordingly*)
+CreateImage[imageA_, imageB_] := 
+  Block[{finalImage, imageRow, numberOfRows, numberOfCols, MapList, f,
+     row, col, pixel},
+   finalImage = {};
+   
+   (*Get number of rows and columns so we can scale interpolation \
+function accordingly*)
+   numberOfCols = ImageDimensions[imageB][[1]];
+   numberOfRows = ImageDimensions[imageA][[2]];
+   
+   MapList = CreateMap[numberOfRows, numberOfCols];
+   f = ListInterpolation[MapList];
+   
+   (*We are ready to create the image now that we have the \
+interpolation function -- PARALLELISE PIXEL COMPUTATION*)
+   finalImage = ParallelMap[Module[{point},
+       
+       (* Convert from 1D index to 2D row-column position*)
+       row = numberOfRows - Quotient[#, numberOfCols];
+       col = Mod[#, numberOfCols] + 1;
+       point =  Round[f[row, col]];
+       If[point[[3]] == 0, 
+        PixelValue[imageA, point[[-2 ;; -3 ;; -1]]], 
+        PixelValue[imageB, point[[-2 ;; -3 ;; -1]]]] 
+       ] &, Range[numberOfCols*numberOfRows - 1]];
+   
+   (*Shape final image into width x height array with colour values \
+at each element*)
+   finalImage = 
+    ArrayReshape[finalImage, {numberOfRows, numberOfCols, 3}];
+   Return[finalImage];
+   ];
+
+
+(*Set Directory and Load images*)
+SetDirectory[NotebookDirectory[]];
+image1 = Import["GargantuaSide.jpg"];
+image2 = Import["SaturnSide.jpg"];
+
+(*Run the code to generate image and export it!*)
+image = CreateImage[image2, image1];
+final = Image[image, ColorSpace -> "RGB"];
+Export["Wormhole.jpg", final];
