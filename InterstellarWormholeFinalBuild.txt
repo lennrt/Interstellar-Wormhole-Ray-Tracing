@@ -1,3 +1,7 @@
+(* Authors: Lennart Rudolph, Victor Shang, Siddarth Srinivasan *)
+(* Date: May 16, 2015 *)
+
+
 (* Initial camera position (\[Theta]c, lc, \[Phi]c) *)
 lc = 1.;
 \[Theta]c = (1. \[Pi])/2;
