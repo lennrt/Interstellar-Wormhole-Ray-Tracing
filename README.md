@@ -18,5 +18,5 @@ With these images and our ray tracing implementation (with 1024 divisions), we o
 
 ![](https://github.com/lrudolph1/Interstellar-Wormhole-Ray-Tracing/blob/master/Images/1024%20division%20render.jpg)
 
-This rendering simulates the perspective of a camera at the star field location looking into a black hole which leads to Saturn.
+This rendering simulates the perspective of a camera at the star field location looking into a wormhole which leads to Saturn.
 
